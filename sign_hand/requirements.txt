@@ -1,0 +1,10 @@
+flask
+bleak
+mediapipe
+opencv-python
+numpy
+pillow
+pyobjc-framework-AVFoundation
+
+# dev
+pytest

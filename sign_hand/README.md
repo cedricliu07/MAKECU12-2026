@@ -10,6 +10,25 @@ You (voice) → Grok Bot → cloudflared tunnel → coach.py (laptop :5050) ─�
                                                                         └→ window: camera + robot hand + coaching
 ```
 
+## Architecture
+
+```
+Grok (HTTPS) → cloudflared → rob.py :5050
+                               │  /start /stop /restart /status /logs /help
+                               │  other paths forwarded (boot app if needed)
+                               ▼
+                         coach.py :5051
+                               │
+               ┌───────────────┼────────────────┐
+               ▼               ▼                ▼
+         ble_out.py      hand_cv.py         view.py
+         (Bluetooth)     (judge / see)      (demo window)
+               │               ▲
+               ▼               │
+         ESP32 hand      lessons.Session
+                         (teach / quiz / word / memory)
+```
+
 | File | What it does |
 |---|---|
 | `rob.py` | Launcher on :5050 (what the tunnel points at). Grok uses it to boot / stop / restart the app and check its health; it forwards everything else to the app and boots it on demand. Fixed command menu only. |
@@ -22,7 +41,7 @@ You (voice) → Grok Bot → cloudflared tunnel → coach.py (laptop :5050) ─�
 
 ## Run
 ```sh
-python3 -m pip install flask bleak mediapipe opencv-python numpy pyobjc-framework-AVFoundation
+python3 -m pip install -r sign_hand/requirements.txt
 bash sign_hand/start.sh --ble          # tunnel + coach, robot over Bluetooth
 bash sign_hand/start.sh --dry          # no robot
 python3 sign_hand/coach.py --dry --sim # no camera: a fake learner copies the robot (test / backup)
@@ -30,6 +49,15 @@ python3 sign_hand/coach.py --dry --sim # no camera: a fake learner copies the ro
 Then paste the prompt (already on the clipboard) into a **new** Grok chat, send, and go live voice.
 Other flags: `--camera N` (default = the Mac's built-in camera, never the iPhone) ·
 `--no-contacts` (judge finger curls only) · `--no-chime`.
+
+## Tests
+Offline suite (no camera, Bluetooth, or network):
+```sh
+cd sign_hand && python3 -m pytest -q
+```
+Covers `hand_cv` (features / judge / recognize / calibration), `lessons` Session flows,
+`ble_out` angle mapping + stagger, coach HTTP routes via Flask's `test_client`, and
+`rob.py` helpers (`/help`, `opts_from_query`, `log_tail`).
 
 ## Grok runs everything
 `start.sh` starts the tunnel and the launcher. From then on, Grok can drive the whole thing:

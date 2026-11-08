@@ -54,10 +54,12 @@ HELP = {
 
 
 def say(text, ok=True, **kw):
+    """JSON reply shaped for Grok: always includes ok + speakable say."""
     return {"ok": ok, "say": text, **kw}
 
 
 def running():
+    """True while the coach.py child process is alive."""
     return proc is not None and proc.poll() is None
 
 
@@ -71,6 +73,7 @@ def grok_header():
 
 
 def app_get(path, timeout=3.0):
+    """GET a path on the coach app; returns (status, body, content_type)."""
     req = urllib.request.Request(f"http://127.0.0.1:{APP_PORT}{path}", headers=grok_header())
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.read(), r.headers.get("Content-Type", "application/json")
@@ -126,6 +129,7 @@ def stop_app():
 
 
 def log_tail(n=25):
+    """Last n useful log lines; home directories are scrubbed to ~."""
     try:
         with open(LOG, errors="replace") as f:
             lines = [l.rstrip() for l in f if l.strip()]
@@ -136,6 +140,7 @@ def log_tail(n=25):
 
 
 def last_problem():
+    """Best-effort one-line summary of the most recent error in the app log."""
     for l in reversed(log_tail(60)):
         if any(k in l for k in ("!!", "Error", "error", "not found", "Traceback", "lost")):
             return l.strip()
@@ -143,6 +148,7 @@ def last_problem():
 
 
 def opts_from_query():
+    """Merge DEFAULTS/current with ?robot=&camera=&sim=&contacts= from the request."""
     o = dict(current or DEFAULTS)
     q = request.args
     if q.get("robot") in ("ble", "usb", "dry"):
@@ -189,7 +195,8 @@ def r_status():
     except Exception:
         return say("Rob is starting up.", running=True)
     robot = st.get("robot", "")
-    parts = [(robot if robot.lower().startswith("robot") else f"Robot: {robot}") + ".", "Camera on." if st.get("camera_on") else "Camera off.",
+    parts = [(robot if robot.lower().startswith("robot") else f"Robot: {robot}") + ".", ("Camera on, but it gives no picture." if st.get("camera_ok") is False or st.get("fps") == 0 else
+              f"Camera on ({st.get('fps')} fps)." if st.get("fps") else "Camera on.") if st.get("camera_on") else "Camera off.",
              "I can see a hand." if st.get("hand_visible") else "No hand in view."]
     if "searching" in robot or "not connected" in robot.lower():
         parts.append("Problem: " + last_problem())

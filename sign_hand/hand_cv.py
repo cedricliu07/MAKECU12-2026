@@ -7,7 +7,11 @@ is (0 = straight, 100 = fully curled; thumb, index, middle, ring, pinky), plus a
 All measurements use MediaPipe's 3D *world* landmarks (metres, centred on the hand), so
 they don't change when the hand moves around or turns a little, and work for either hand.
 """
+from __future__ import annotations
+
 import math
+from typing import Any
+
 import numpy as np
 
 FINGERS = ["thumb", "index", "middle", "ring", "pinky"]
@@ -45,12 +49,12 @@ HAND_EDGES = [(0, 1), (1, 2), (2, 3), (3, 4), (0, 5), (5, 6), (6, 7), (7, 8), (5
 TIP = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
 
 
-def _angle(u, v):
+def _angle(u: np.ndarray, v: np.ndarray) -> float:
     c = np.dot(u, v) / (np.linalg.norm(u) * np.linalg.norm(v) + 1e-9)
     return math.degrees(math.acos(max(-1.0, min(1.0, c))))
 
 
-def features(world):
+def features(world: Any) -> dict[str, Any]:
     """world: 21x3 MediaPipe world landmarks -> raw measurements."""
     w = np.asarray(world, dtype=float)
     scale = np.linalg.norm(w[9] - w[0]) + 1e-9            # wrist -> middle knuckle
@@ -67,33 +71,35 @@ def features(world):
 
 class Calibration:
     """Maps raw bends to 0..100. 'open' = flat hand, 'fist' = closed fist (keys 1 / 2 or UI)."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.bend = {"thumb": [15, 85], "index": [10, 230], "middle": [10, 240],
                      "ring": [10, 240], "pinky": [10, 230]}
         self.reach = [1.15, 0.40]          # [open, closed]
 
-    def capture(self, feat, which):
+    def capture(self, feat: dict[str, Any], which: str) -> None:
+        """Record open-hand or fist bends/reach from a features() dict."""
         k = 0 if which == "open" else 1
         for n in FINGERS:
             self.bend[n][k] = feat["bends"][n]
         self.reach[k] = feat["reach"]
 
     @staticmethod
-    def _norm(x, rng):
+    def _norm(x: float, rng: list[float]) -> float:
         a, b = rng
         return 100.0 * float(np.clip((x - a) / ((b - a) if abs(b - a) > 1e-6 else 1e-6), 0, 1))
 
-    def curls(self, feat):
+    def curls(self, feat: dict[str, Any]) -> list[float]:
+        """Map features to five curl values in 0..100 (thumb, index, middle, ring, pinky)."""
         thumb = 0.7 * self._norm(feat["reach"], self.reach) + 0.3 * self._norm(feat["bends"]["thumb"], self.bend["thumb"])
         return [thumb] + [self._norm(feat["bends"][n], self.bend[n]) for n in FINGERS[1:]]
 
 
-def _rule_ok(rule, feat):
+def _rule_ok(rule: tuple[str, str, float, str], feat: dict[str, Any]) -> bool:
     key, op, thr, _ = rule
     return feat[key] < thr if op == "<" else feat[key] > thr
 
 
-def judge(letter, curls, feat):
+def judge(letter: str, curls: list[float], feat: dict[str, Any] | None) -> dict[str, Any]:
     """Per-finger verdict for one target letter -> dict with match, score 0-100, fixes."""
     target = SHAPES[letter]
     fingers, problems = {}, []
@@ -128,7 +134,7 @@ def judge(letter, curls, feat):
             "contacts": contacts, "fix": fix, "learner": [int(c) for c in curls], "target": target}
 
 
-def recognize(curls, feat):
+def recognize(curls: list[float], feat: dict[str, Any] | None) -> tuple[list[tuple[str, float]], float]:
     """Which letter does the hand look like? -> [(letter, probability)] best first."""
     costs = {}
     for L, t in SHAPES.items():

@@ -26,31 +26,36 @@ CLOSED_DEG = [0, 0, 0, 0, 0]
 
 TICK = 0.04          # 25 Hz
 STAGGER = 0.12       # s between fingers when the hand changes shape
-EASE = 0.35          # fraction of the remaining distance per tick (smooth, fast)
 
 
 def curl_to_angle(i, curl):
+    """Map curl 0..100 to a servo angle using OPEN_DEG / CLOSED_DEG for finger i."""
     curl = max(0.0, min(100.0, curl))
     return round(OPEN_DEG[i] + (CLOSED_DEG[i] - OPEN_DEG[i]) * curl / 100.0)
 
 
 class BleOut:
+    """Background BLE writer: follows DigitalHand.target_now() or a /raw override."""
+
     def __init__(self, hand, timeout=10.0):
         self.hand = hand            # DigitalHand: we read hand.target_now()
         self.timeout = timeout
-        self.cur = [0.0] * 5        # our own eased curls (independent of camera fps)
+        self.cur = [0.0] * 5        # curl view of the last shown angles
         self.raw = None             # manual angle override from /raw (calibration)
         self.connected = False
         self.last_sent = None
         self.status = "starting"
 
     def start(self):
+        """Start the scan/connect/write loop on a daemon thread."""
         threading.Thread(target=lambda: asyncio.run(self._main()), daemon=True).start()
 
     def set_raw(self, angles):
+        """Hold five servo angles (0-180) until clear_raw()."""
         self.raw = [max(0, min(180, int(a))) for a in angles]
 
     def clear_raw(self):
+        """Return to following the on-screen hand target."""
         self.raw = None
 
     def _angles(self):
@@ -74,7 +79,7 @@ class BleOut:
         return list(self._shown)
 
     def _settled(self, a):
-        """True once easing has (almost) reached the target: log one line per pose, not 25."""
+        """True once every staggered finger has reached the goal (log one line per pose)."""
         return self.raw is not None or a == getattr(self, "_goal", None)
 
     async def _main(self):

@@ -138,8 +138,11 @@ def check(letter):
     """INSTANT verdict from what the camera already sees (never waits)."""
     L = norm_letter(letter) or (SES.target or "")
     if L not in SHAPES:
-        return {"ok": False, "match": False, "hand_visible": hand_visible(),
-                "say": "Ask me to teach a letter first, then I can check it."}
+        # no lesson letter yet (e.g. right after a restart): still read the hand
+        seen = see()
+        return {"ok": True, "match": False, "hand_visible": hand_visible(4), "target": None,
+                "say": seen if hand_visible(4) else
+                "I can't see your hand. Hold it up to the camera, palm facing it."}
     with LIVE.lock:
         curls, feat, ranked = LIVE.curls, LIVE.feat, list(LIVE.ranked)
     recent_pass = any(e.get("pass") == L and time.time() - e["t"] < 4 for e in list(SES.events))
@@ -158,9 +161,10 @@ def check(letter):
 
 
 def see():
+    """Recognize the learner's current handshape as a short spoken sentence."""
     with LIVE.lock:
         ranked = list(LIVE.ranked)
-    if not hand_visible(1.5) or not ranked:
+    if not hand_visible(4) or not ranked:            # Grok's call lands ~1-3 s after you sign
         return "I can't see your hand right now."
     (L1, p1), (L2, _) = ranked[0], ranked[1]
     name = "I love you" if L1 == "ILY" else L1
@@ -170,6 +174,7 @@ def see():
 
 
 def norm_letter(x):
+    """Normalize a path/JSON letter to A-Z or ILY (empty string if none)."""
     t = re.sub(r"[^A-Z]", "", str(x or "").upper())
     if t in ("ILY", "ILOVEYOU", "LOVEYOU"):
         return "ILY"
@@ -187,6 +192,7 @@ def note_grok():
         print(f"[grok] {request.path}", flush=True)
 
 def reply(say, **kw):
+    """JSON reply for Grok: always includes ok + speakable say."""
     return {"ok": kw.pop("ok", True), "say": say, **kw}
 
 # ---- local actions (keyboard): same as Grok's, so the demo works without voice
@@ -320,8 +326,14 @@ def g_show(letter):
 # ---- older routes (kept so old prompts still work)
 @app.get("/status")
 def status():
-    return {"ok": True, "robot": robot_link()["text"], "camera_on": LIVE.camera_on,
-            "target": SES.target, "hand_visible": hand_visible(0.5),
+    link = robot_link()
+    hand = hand_visible(0.5)
+    say = f"{link['text']}. Camera {'on' if LIVE.camera_on else 'off'}. " + (
+        "Hand in view." if hand else "No hand in view.")
+    return {"ok": True, "say": say, "robot": link["text"], "camera_on": LIVE.camera_on,
+            "target": SES.target, "hand_visible": hand,
+            "camera_ok": LIVE.camera_ok, "fps": round(LIVE.fps, 1),
+            "hand_seen_s_ago": round(time.time() - LIVE.hand_seen_at, 1) if LIVE.hand_seen_at else None,
             "robot_letters": "".join(sorted(ALLOWED)) + " + ILY"}
 
 @app.post("/sign")
@@ -379,6 +391,9 @@ def pick_camera(explicit):
         import AVFoundation as AV
         devs = list(AV.AVCaptureDevice.devicesWithMediaType_(AV.AVMediaTypeVideo)) + \
                list(AV.AVCaptureDevice.devicesWithMediaType_(AV.AVMediaTypeMuxed))
+        # OpenCV 4.10 numbers cameras sorted by uniqueID (checked 11-08: index 0 was the
+        # iPhone although macOS lists the MacBook first), so match that order.
+        devs = sorted(devs, key=lambda d: str(d.uniqueID()))
     except Exception:
         print("(camera auto-pick unavailable: pip3 install pyobjc-framework-AVFoundation) using 0")
         return 0
@@ -451,6 +466,13 @@ def show(frame):
 def open_window():
     cv2.namedWindow(WIN, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(WIN, 1440, 810)
+    try:                                   # bring the window in front of the Terminal / Grok
+        cv2.setWindowProperty(WIN, cv2.WND_PROP_TOPMOST, 1)
+        subprocess.Popen(["osascript", "-e", 'tell application "System Events" to set frontmost of '
+                          f'(first process whose unix id is {os.getpid()}) to true'],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 
 def sim_loop():

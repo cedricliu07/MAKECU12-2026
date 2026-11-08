@@ -1,8 +1,12 @@
 """Teaching content + the learning session (modes, progress, captions) for the Rob coach."""
+from __future__ import annotations
+
 import random
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
+from typing import Any
 
 from hand_cv import ALLOWED, SHAPES
 
@@ -63,32 +67,33 @@ ADVANCE_DELAY = 1.0    # pause on "Correct!" before the next letter of a word
 
 class Session:
     """Learning state shared by the Grok API, the camera loop and the window."""
-    def __init__(self, robot_cmd):
+    def __init__(self, robot_cmd: Callable[[str], Any]) -> None:
         self.robot_cmd = robot_cmd            # function(line) -> moves robot + twin
         self.lock = threading.RLock()
         self.mode = "free"                    # free | teach | word | quiz | memory
-        self.target = None
+        self.target: str | None = None
         self.show_answer = True               # window shows target letter + robot
         self.word, self.idx = "", 0
-        self.quiz_answer = None
+        self.quiz_answer: str | None = None
         self.instance = 0                     # bumps on every new target (so each pass counts once)
         self.passed_instance = -1
         self.target_since = 0.0
-        self.stats = {L: {"tries": 0, "passed": 0, "best": None} for L in SHAPES}
+        self.stats: dict[str, dict[str, Any]] = {L: {"tries": 0, "passed": 0, "best": None} for L in SHAPES}
         self.streak = self.best_streak = self.total = 0
-        self.captions = deque(maxlen=6)
+        self.captions: deque[dict[str, Any]] = deque(maxlen=6)
         self.flash_until = 0.0
         self.celebrate_until = 0.0
-        self.pending_advance = None
-        self.events = deque(maxlen=20)
+        self.pending_advance: float | None = None
+        self.events: deque[dict[str, Any]] = deque(maxlen=20)
 
     # ---------------------------------------------------------- helpers
-    def say(self, text, who="rob"):
+    def say(self, text: str, who: str = "rob") -> str:
+        """Append a caption and return the same sentence for Grok to speak."""
         with self.lock:
             self.captions.append({"who": who, "text": text, "t": time.time()})
         return text
 
-    def _set_target(self, L, mode, show_robot=True, show_answer=True):
+    def _set_target(self, L: str, mode: str, show_robot: bool = True, show_answer: bool = True) -> None:
         with self.lock:
             self.mode, self.target, self.show_answer = mode, L, show_answer
             if mode != "word":
@@ -102,11 +107,13 @@ class Session:
         else:
             self.robot_cmd("OPEN")
 
-    def mastered(self):
+    def mastered(self) -> list[str]:
+        """Curriculum letters the learner has passed at least once."""
         return [L for L in CURRICULUM if self.stats[L]["passed"] > 0]
 
     # ---------------------------------------------------------- actions (all return a sentence to speak)
-    def teach(self, L):
+    def teach(self, L: str) -> str:
+        """Hold a letter on the robot and explain how to form it."""
         if L in WORDS_ONLY:
             return self.say(f"The robot can't make {L}, so here it is in words: {WORDS_ONLY[L]}")
         if L not in CONTENT:
@@ -116,19 +123,22 @@ class Session:
         name = "I love you" if L == "ILY" else L
         return self.say(f"This is {name}. {how} {tip}")
 
-    def next_letter(self):
+    def next_letter(self) -> str:
+        """Teach the next unpassed curriculum letter (or a random review)."""
         todo = [L for L in CURRICULUM if self.stats[L]["passed"] == 0]
         L = todo[0] if todo else random.choice(CURRICULUM)
         return self.teach(L)
 
-    def hint(self, live_fix=None):
+    def hint(self, live_fix: str | None = None) -> str:
+        """Spoken tip for the current target, optionally prefixed with a live camera fix."""
         L = self.target
         if L not in CONTENT:
             return self.say("Ask me for a letter first.")
         _, tip, mistake = CONTENT[L]
         return self.say(f"{live_fix + ' ' if live_fix else ''}{mistake} Remember: {tip}")
 
-    def word_practice(self, word):
+    def word_practice(self, word: str) -> str:
+        """Sign a word letter by letter; advances itself after each pass."""
         w = "".join(c for c in word.upper() if c in ALLOWED)
         if not w:
             w = random.choice(WORDS)
@@ -139,14 +149,16 @@ class Session:
         extra = f" I skipped {', '.join(skipped)}, the robot can't form those." if skipped else ""
         return self.say(f"Let's sign {w}, letter by letter. First, {w[0]}: {CONTENT[w[0]][0]}{extra}")
 
-    def quiz(self):
+    def quiz(self) -> str:
+        """Robot signs a hidden letter; learner guesses via guess()."""
         L = random.choice(CURRICULUM)
         with self.lock:
             self.quiz_answer = L
         self._set_target(L, "quiz", show_robot=True, show_answer=False)
         return self.say("Quiz time. What letter is the robot making?")
 
-    def guess(self, g):
+    def guess(self, g: str) -> str:
+        """Score a quiz guess; reveals the answer either way."""
         with self.lock:
             ans = self.quiz_answer
         if not ans:
@@ -165,19 +177,22 @@ class Session:
             self.show_answer = True
         return self.say(f"Close, but it's {ans}. {CONTENT[ans][0]}")
 
-    def memory(self, L=None):
+    def memory(self, L: str | None = None) -> str:
+        """Learner signs from memory; robot stays open/hidden until they pass."""
         L = L if L in CONTENT else random.choice(self.mastered() or CURRICULUM)
         self._set_target(L, "memory", show_robot=False, show_answer=True)
         return self.say(f"From memory: sign {L}. The robot won't help this time.")
 
-    def free(self):
+    def free(self) -> str:
+        """Relax the robot; learner can sign anything for /see."""
         with self.lock:
             self.mode, self.target, self.word = "free", None, ""
             self.instance += 1
         self.robot_cmd("OPEN")
         return self.say("Free mode. Sign any letter and I'll tell you what I see.")
 
-    def progress(self):
+    def progress(self) -> str:
+        """Spoken summary of letters passed and best streak."""
         m = self.mastered()
         if not m:
             return self.say("No letters passed yet. Say 'next' to start with L.")
@@ -185,7 +200,7 @@ class Session:
                         f"Best streak: {self.best_streak}.")
 
     # ---------------------------------------------------------- called by the camera loop
-    def on_pass(self, L, now):
+    def on_pass(self, L: str, now: float) -> bool:
         """The learner held the right shape long enough. Returns True if this is a new pass."""
         with self.lock:
             if self.passed_instance == self.instance or L != self.target:
@@ -213,7 +228,7 @@ class Session:
             self.events.append({"t": now, "pass": L})
             return True
 
-    def tick(self, now):
+    def tick(self, now: float) -> None:
         """Advance word practice after the short 'Correct!' pause."""
         with self.lock:
             if self.pending_advance and now >= self.pending_advance and self.mode == "word":
@@ -224,13 +239,14 @@ class Session:
                 return
         self._set_target(L, "word")
 
-    def _helpful(self):
+    def _helpful(self) -> bool:
         """Show the how-to text? Not while it would give away a quiz / memory answer."""
         if self.target not in CONTENT or not self.show_answer:
             return False
         return self.mode != "memory" or self.passed_instance == self.instance
 
-    def snapshot(self):
+    def snapshot(self) -> dict[str, Any]:
+        """Thread-safe view of session state for the window and API helpers."""
         with self.lock:
             return {
                 "mode": self.mode, "target": self.target, "show_answer": self.show_answer,
