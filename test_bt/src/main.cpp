@@ -10,9 +10,10 @@ namespace {
 
 constexpr uint8_t SERVO_COUNT = 5;
 const uint8_t SERVO_PINS[SERVO_COUNT] = {18, 19, 21, 22, 23};
+const bool SERVO_REVERSED[SERVO_COUNT] = {false, false, false, true, true};
 constexpr int SERVO_MIN_ANGLE = 0;
 constexpr int SERVO_MAX_ANGLE = 180;
-constexpr int START_ANGLE = 90;
+constexpr int START_ANGLE = 180;
 
 const char *const DEVICE_NAME = "ESP32-Servo-Controller";
 const char *const SERVICE_UUID = "6a7c1000-3a5b-4f2e-9b41-4e8d2c10a001";
@@ -27,6 +28,12 @@ bool advertisingPending = false;
 portMUX_TYPE commandMux = portMUX_INITIALIZER_UNLOCKED;
 BLECharacteristic *responseCharacteristic = nullptr;
 BLEServer *bleServer = nullptr;
+
+void writeServoAngle(uint8_t index, int angle) {
+  const int outputAngle =
+      SERVO_REVERSED[index] ? SERVO_MAX_ANGLE - angle : angle;
+  servos[index].write(outputAngle);
+}
 
 bool parseUnsigned(const std::string &value, int maximum, int &parsed) {
   if (value.empty()) {
@@ -138,7 +145,7 @@ void setup() {
   for (uint8_t i = 0; i < SERVO_COUNT; ++i) {
     servos[i].setPeriodHertz(50);
     servos[i].attach(SERVO_PINS[i], 500, 2400);
-    servos[i].write(START_ANGLE);
+    writeServoAngle(i, START_ANGLE);
   }
 
   BLEDevice::init(DEVICE_NAME);
@@ -191,7 +198,7 @@ void loop() {
 
   if (applyCommand) {
     for (uint8_t i = 0; i < SERVO_COUNT; ++i) {
-      servos[i].write(angles[i]);
+      writeServoAngle(i, angles[i]);
     }
     Serial.println("Applied BLE servo command");
   }
