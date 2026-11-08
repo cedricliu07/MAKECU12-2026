@@ -89,7 +89,8 @@ client at a time: close `ble_servo.py` / `pattern.py` first. macOS asks once to 
 Bluetooth for Terminal.
 
 **Calibrate the servos** before attaching the tendons: `curl localhost:5050/raw/90,90,90,90,90`
-(thumb..pinky) sets angles directly. Find each finger's straight and curled angle, put them
+(thumb..pinky) sets angles directly. Defaults follow `test_bt`: 180 = straight, 0 = curled
+(the firmware reverses ring + pinky itself). Find each finger's straight and curled angle, put them
 in `OPEN_DEG` / `CLOSED_DEG` in `ble_out.py`, then `curl localhost:5050/raw/off`.
 
 Legacy: `firmware/sign_hand/sign_hand.ino` + USB serial (`coach.py` without `--ble`/`--dry`),

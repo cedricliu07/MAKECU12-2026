@@ -18,9 +18,10 @@ COMMAND_UUID = "6a7c1001-3a5b-4f2e-9b41-4e8d2c10a001"
 
 # ===== CALIBRATE on the real hand (GET /raw/... helps, see README) =====
 # Servo angle when the finger is fully STRAIGHT (curl 0) and fully CURLED (curl 100).
-# Closed may be smaller than open if a servo is mounted reversed.
-OPEN_DEG = [20, 20, 20, 20, 20]
-CLOSED_DEG = [160, 160, 160, 160, 160]
+# test_bt convention: 180 = fully extended, 0 = fully retracted (asl_letters.py);
+# the firmware already reverses ring + pinky, so all five use the same direction here.
+OPEN_DEG = [180, 180, 180, 180, 180]
+CLOSED_DEG = [0, 0, 0, 0, 0]
 # =======================================================================
 
 TICK = 0.04          # 25 Hz
