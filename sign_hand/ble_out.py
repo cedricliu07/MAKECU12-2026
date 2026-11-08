@@ -25,6 +25,7 @@ CLOSED_DEG = [0, 0, 0, 0, 0]
 # =======================================================================
 
 TICK = 0.04          # 25 Hz
+STAGGER = 0.12       # s between fingers when the hand changes shape
 EASE = 0.35          # fraction of the remaining distance per tick (smooth, fast)
 
 
@@ -53,12 +54,28 @@ class BleOut:
         self.raw = None
 
     def _angles(self):
+        """Final pose only, one finger every STAGGER s (no 25 Hz easing stream).
+
+        Streaming eased frames, or all five servos jumping at once, dropped the BLE link
+        on the real hand (11-08). The servos move smoothly on their own; staggering cuts
+        the current spike when the whole hand changes shape."""
         if self.raw is not None:
             return list(self.raw)
         _, tgt = self.hand.target_now()
+        tgt = [curl_to_angle(i, c) for i, c in enumerate(tgt)]
+        now = time.monotonic()
+        if tgt != getattr(self, "_goal", None):
+            self._goal, self._goal_at = tgt, now
+            self._shown = list(getattr(self, "_shown", None) or OPEN_DEG)   # ESP32 boots open
         for i in range(5):
-            self.cur[i] += (tgt[i] - self.cur[i]) * EASE
-        return [curl_to_angle(i, c) for i, c in enumerate(self.cur)]
+            if now - self._goal_at >= i * STAGGER:
+                self._shown[i] = tgt[i]
+        self.cur = [100 * (OPEN_DEG[i] - a) / max(1, OPEN_DEG[i] - CLOSED_DEG[i]) for i, a in enumerate(self._shown)]
+        return list(self._shown)
+
+    def _settled(self, a):
+        """True once easing has (almost) reached the target: log one line per pose, not 25."""
+        return self.raw is not None or a == getattr(self, "_goal", None)
 
     async def _main(self):
         from bleak import BleakClient, BleakScanner
@@ -87,14 +104,21 @@ class BleOut:
                     self.connected, self.last_sent = True, None
                     self.status = "connected"
                     print(f"[BLE] connected to {DEVICE_NAME}. Hand is live.", flush=True)
+                    sent_at = 0.0
                     while client.is_connected:
                         a = self._angles()
-                        if a != self.last_sent:
+                        now = time.monotonic()
+                        # send on change, and re-send the pose every second so a lost packet can't stick
+                        if a != self.last_sent or now - sent_at > 1.0:
                             msg = "A," + ",".join(str(x) for x in a)
-                            # write-without-response: no round trip, lowest latency
-                            await client.write_gatt_char(COMMAND_UUID, msg.encode(), response=False)
-                            self.last_sent = a
+                            # write WITH response: the ESP32 confirms each one (macOS drops
+                            # write-without-response packets when they come fast)
+                            await client.write_gatt_char(COMMAND_UUID, msg.encode(), response=True)
+                            if a != self.last_sent:
+                                print(f"[BLE] -> {msg}", flush=True) if self._settled(a) else None
+                            self.last_sent, sent_at = a, now
                         await asyncio.sleep(TICK)
+                    print("[BLE] ESP32 disconnected. Reconnecting.", flush=True)
             except Exception as e:  # dropped link, GATT error, etc. -> rescan
                 print(f"[BLE] link lost ({e}). Reconnecting.", flush=True)
             self.connected = False
