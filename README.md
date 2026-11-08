@@ -71,3 +71,22 @@ If the client connects but reports missing BLE characteristics, flash the
 current `test_bt` firmware. If that firmware is already installed, remove the
 ESP32 from Windows Bluetooth settings, restart the ESP32, and retry to clear a
 possibly stale GATT cache.
+
+### Map ASL letters to finger positions
+
+The static letter lookup in `test_bt/asl_letters.py` returns five angles in
+thumb-to-pinky order. Angles are degrees: `0` is fully retracted and `180` is
+fully extended. For example:
+
+```sh
+python test_bt/asl_letters.py A
+python test_bt/asl_letters.py A --send
+```
+
+The first command prints the five servo positions; `--send` also sends them to
+the ESP32 over BLE. The lookup is an approximate finger-flexion model, not a
+complete ASL handshape model: five independent servos cannot represent palm
+orientation, finger spreading/crossing, or fingertip contact. J and Z require
+movement, so their entries return only a static handshape, not the letter's
+motion. Check the physical hand against fluent ASL references and tune the
+angles before using it for communication.
