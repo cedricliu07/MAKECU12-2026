@@ -53,3 +53,21 @@ The client scans for up to 10 seconds per attempt and retries a failed scan or
 connection up to three times. Set a different scan timeout with
 `--timeout <seconds>` before the subcommand. If the controller is not found,
 check that it is powered and advertising and that Bluetooth is enabled.
+
+### Run a repeating servo pattern
+
+Run the existing script from the repository root:
+
+```sh
+python test_bt/pattern.py
+```
+
+It connects directly over BLE and sends different, smoothly changing angles to
+all five servos every half second for 40 seconds. Press Ctrl+C to stop and
+disconnect. The staggered phase (`servo * 1.1`) makes the servos follow
+different positions rather than all moving together.
+
+If the client connects but reports missing BLE characteristics, flash the
+current `test_bt` firmware. If that firmware is already installed, remove the
+ESP32 from Windows Bluetooth settings, restart the ESP32, and retry to clear a
+possibly stale GATT cache.
