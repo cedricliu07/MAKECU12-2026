@@ -1,5 +1,7 @@
 # MAKECU12-2026
 
+Video Link: https://youtu.be/b_bEoLGCqoQ?is=gnfUDppvSdRILqMw
+
 ## Bluetooth servo test (`test_bt`)
 
 This PlatformIO project runs on an ESP32 and advertises as
